@@ -29,6 +29,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #include "libavutil/avstring.h"
 #include "libavutil/eval.h"
@@ -60,8 +61,38 @@
 
 #include <assert.h>
 
+// experimental
+//#include "adbconnect.h"
+
 const char program_name[] = "ffplay";
 const int program_birth_year = 2003;
+
+/*********************************************************************/
+ 
+static int64_t swipe_start_timestamp;
+static int swipe_start_x;
+static int swipe_start_y;
+static void tapscreen(int x, int y, int screenw, int screenh);
+static void tapscreen(int x, int y, int screenw, int screenh)
+{
+    char command[100] = {0};
+
+    sprintf(command, "/Users/jp20151/development/ffmpeg/FFmpeg/adb_tap.sh %d %d %d %d", x, y, screenw, screenh);
+    printf(command);
+    system(command);
+}
+
+static void swipescreen(int startx, int starty, int endx, int endy, long duration, int screenw, int screenh);
+static void swipescreen(int startx, int starty, int endx, int endy, long duration, int screenw, int screenh)
+{
+    char command[100] = {0};
+
+    sprintf(command, "/Users/jp20151/development/ffmpeg/FFmpeg/adb_swipe.sh %d %d %d %d %d %ld", startx, starty, endx, endy, screenw, screenh, duration);
+    printf(command);
+    system(command);
+}
+
+/*********************************************************************/
 
 #define MAX_QUEUE_SIZE (15 * 1024 * 1024)
 #define MIN_FRAMES 25
@@ -1260,6 +1291,7 @@ static void set_default_window_size(int width, int height, AVRational sar)
 
 static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
 {
+    printf("OPENING VIDEO XXXXXXXXXXXXXXXXX \n\n\n");
     int flags = SDL_HWSURFACE | SDL_ASYNCBLIT | SDL_HWACCEL;
     int w,h;
 
@@ -3157,10 +3189,10 @@ static VideoState *stream_open(const char *filename, AVInputFormat *iformat)
 {
     VideoState *is;
 
-    is = av_mallocz(sizeof(VideoState));
+    is = av_mallocz(sizeof(VideoState)); //mem.c
     if (!is)
         return NULL;
-    is->filename = av_strdup(filename);
+    is->filename = av_strdup(filename);//memc.c
     if (!is->filename)
         goto fail;
     is->iformat = iformat;
@@ -3359,6 +3391,7 @@ static void event_loop(VideoState *cur_stream)
     SDL_Event event;
     double incr, pos, frac;
 
+
     for (;;) {
         double x;
         refresh_loop_wait_event(cur_stream, &event);
@@ -3486,6 +3519,19 @@ static void event_loop(VideoState *cur_stream)
             }
             if (event.button.button == SDL_BUTTON_LEFT) {
                 static int64_t last_mouse_left_click = 0;
+
+                SDL_Rect rekt = cur_stream->last_display_rect;
+
+                printf(" DISPLAY RECT ==> ==> (x,y,w,h) (%d,%d,%d,%d)", rekt.x, rekt.y, rekt.w, rekt.h);
+                int modified_tap_x = (int)((event.button.x - rekt.x) * 1600 * 1.0f / rekt.w);
+                int modified_tap_y = (int)((event.button.y - rekt.y) * 2560 * 1.0f / rekt.h);
+                tapscreen(modified_tap_x, modified_tap_y, 1, 1);//(int) event.button.x, (int) event.button.y, cur_stream->width, cur_stream->height);
+                printf("\n where did i touch?  %d,  %d", event.button.x, event.button.y);
+                uint64_t sizexxx =  avio_size(cur_stream->ic->pb);
+                printf("\n avio_size of cur_stream is %llu", sizexxx);
+                printf("\n stream w and h are   %d, %d ", cur_stream->width, cur_stream->height);
+                printf("\nvideo state dims %d, %d\n\n", modified_tap_x, modified_tap_y);
+                printf(" SCREEN WIDTH HEIGHT ==   %d,  %d \n\n\n\n", fs_screen_width, fs_screen_height);
                 if (av_gettime_relative() - last_mouse_left_click <= 500000) {
                     toggle_full_screen(cur_stream);
                     cur_stream->force_refresh = 1;
@@ -3500,9 +3546,34 @@ static void event_loop(VideoState *cur_stream)
                 cursor_hidden = 0;
             }
             cursor_last_shown = av_gettime_relative();
+
+            if(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT))
+            {
+
+                SDL_Rect rekt = cur_stream->last_display_rect;
+                int modified_tap_x = (int)((event.button.x - rekt.x) * 1600 * 1.0f / rekt.w);
+                int modified_tap_y = (int)((event.button.y - rekt.y) * 2560 * 1.0f / rekt.h);
+
+                if (event.type == SDL_MOUSEBUTTONDOWN) {
+                    swipe_start_timestamp = av_gettime_relative();
+                }
+                else{
+                    uint64_t diff = (uint64_t)(av_gettime_relative() - swipe_start_timestamp) * 0.001f;
+                    swipescreen(swipe_start_x, swipe_start_y, modified_tap_x, 
+                                modified_tap_y, diff, cur_stream->width, cur_stream->height);
+                }
+
+                swipe_start_x = modified_tap_x;
+                swipe_start_y = modified_tap_y;
+
+            }
+
+
             if (event.type == SDL_MOUSEBUTTONDOWN) {
                 if (event.button.button != SDL_BUTTON_RIGHT)
+                {
                     break;
+                }
                 x = event.button.x;
             } else {
                 if (!(event.motion.state & SDL_BUTTON_RMASK))
@@ -3838,8 +3909,9 @@ int main(int argc, char **argv)
 
     if (!display_disable) {
         const SDL_VideoInfo *vi = SDL_GetVideoInfo();
-        fs_screen_width = vi->current_w;
+        fs_screen_width =  vi->current_w;
         fs_screen_height = vi->current_h;
+        printf(" SCREEN WIDTH HEIGHT ==   %d,  %d \n\n\n\n", fs_screen_width, fs_screen_height);
     }
 
     SDL_EventState(SDL_ACTIVEEVENT, SDL_IGNORE);
