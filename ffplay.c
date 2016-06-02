@@ -1010,7 +1010,6 @@ static void video_image_display(VideoState *is)
         calculate_display_rect(&rect, is->xleft, is->ytop, is->width, is->height, vp->width, vp->height, vp->sar);
 
         SDL_DisplayYUVOverlay(vp->bmp, &rect);
-
         if (rect.x != is->last_display_rect.x || rect.y != is->last_display_rect.y || rect.w != is->last_display_rect.w || rect.h != is->last_display_rect.h || is->force_refresh) {
             int bgcolor = SDL_MapRGB(screen->format, 0x00, 0x00, 0x00);
             fill_border(is->xleft, is->ytop, is->width, is->height, rect.x, rect.y, rect.w, rect.h, bgcolor, 1);
@@ -1291,7 +1290,6 @@ static void set_default_window_size(int width, int height, AVRational sar)
 
 static int video_open(VideoState *is, int force_set_video_mode, Frame *vp)
 {
-    printf("OPENING VIDEO XXXXXXXXXXXXXXXXX \n\n\n");
     int flags = SDL_HWSURFACE | SDL_ASYNCBLIT | SDL_HWACCEL;
     int w,h;
 
@@ -3525,13 +3523,8 @@ static void event_loop(VideoState *cur_stream)
                 printf(" DISPLAY RECT ==> ==> (x,y,w,h) (%d,%d,%d,%d)", rekt.x, rekt.y, rekt.w, rekt.h);
                 int modified_tap_x = (int)((event.button.x - rekt.x) * 1600 * 1.0f / rekt.w);
                 int modified_tap_y = (int)((event.button.y - rekt.y) * 2560 * 1.0f / rekt.h);
-                tapscreen(modified_tap_x, modified_tap_y, 1, 1);//(int) event.button.x, (int) event.button.y, cur_stream->width, cur_stream->height);
-                printf("\n where did i touch?  %d,  %d", event.button.x, event.button.y);
-                uint64_t sizexxx =  avio_size(cur_stream->ic->pb);
-                printf("\n avio_size of cur_stream is %llu", sizexxx);
-                printf("\n stream w and h are   %d, %d ", cur_stream->width, cur_stream->height);
-                printf("\nvideo state dims %d, %d\n\n", modified_tap_x, modified_tap_y);
-                printf(" SCREEN WIDTH HEIGHT ==   %d,  %d \n\n\n\n", fs_screen_width, fs_screen_height);
+                tapscreen(modified_tap_x, modified_tap_y, 1, 1);
+              
                 if (av_gettime_relative() - last_mouse_left_click <= 500000) {
                     toggle_full_screen(cur_stream);
                     cur_stream->force_refresh = 1;
@@ -3911,7 +3904,6 @@ int main(int argc, char **argv)
         const SDL_VideoInfo *vi = SDL_GetVideoInfo();
         fs_screen_width =  vi->current_w;
         fs_screen_height = vi->current_h;
-        printf(" SCREEN WIDTH HEIGHT ==   %d,  %d \n\n\n\n", fs_screen_width, fs_screen_height);
     }
 
     SDL_EventState(SDL_ACTIVEEVENT, SDL_IGNORE);
@@ -3934,6 +3926,19 @@ int main(int argc, char **argv)
         do_exit(NULL);
     }
 
+//============================ force resize here =====================
+
+    screen = SDL_SetVideoMode(FFMIN(16383, fs_screen_width), fs_screen_height, 0,
+                                          SDL_HWSURFACE|(is_full_screen?SDL_FULLSCREEN:SDL_RESIZABLE)|SDL_ASYNCBLIT|SDL_HWACCEL);
+                if (!screen) {
+                    av_log(NULL, AV_LOG_FATAL, "Failed to set video mode\n");
+                    do_exit(is);
+                }
+                screen_width  = is->width  = screen->w;
+                screen_height = is->height = screen->h;
+                //is->force_refresh = 1;
+
+//====================================================================
     event_loop(is);
 
     /* never returns */
